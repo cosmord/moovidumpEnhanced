@@ -1,196 +1,116 @@
-# 📚 MooviDump Enhanced
+# MooviDump Enhanced
 
-> Descarga todo el contenido de tus cursos de Moodle de forma automática y organizada.
+Descarga y organiza los recursos de tus cursos de Moodle en la carpeta `dumps/`.
+La salida sigue la estructura curso -> sección -> módulo -> archivo.
 
-## 🚀 Inicio Rápido
+## Requisitos
 
-### 1️⃣ Configuración del Entorno
+- Python 3.10 o posterior.
+- `uv` para instalar las dependencias de Python.
+- Node.js y `pnpm` solo si vas a usar la interfaz web. Si `pnpm` no está instalado, `run.py` intenta instalarlo con `npm`.
 
-Copia el archivo de ejemplo y completa tus credenciales:
+El proyecto usa `pyproject.toml` y `uv.lock` como fuente principal de dependencias.
+`requirements.txt` se conserva para flujos antiguos que todavía usan `pip`.
 
-```bash
+## Instalación rápida
+
+1. Copia el archivo de ejemplo y completa tus credenciales si quieres guardarlas:
+
+```powershell
 copy example.env .env
 ```
 
-Edita `.env` y rellena:
+Edita `.env` con estos valores:
+
 ```env
 MOODLE_SITE="https://moovi.uvigo.gal"
 MOODLE_USERNAME="tu_usuario"
 MOODLE_PASSWORD="tu_contraseña"
 ```
 
-### 2️⃣ Instalar Dependencias
+2. Instala las dependencias:
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-### 3️⃣ Ejecutar el Dump
+## Uso
 
-```bash
-python main.py
-```
+### Lanzador interactivo
 
-## 📦 Opciones Avanzadas
-
-Edita estas variables en `main.py` para personalizar el comportamiento:
-
-### `DUMP_ALL = True`
-Guarda snapshots JSON de cada sección y módulo. Útil para debugging o análisis.
-
-**Sin activar:**
-```
-dumps/
-└── FMI/
-    ├── Tema 1/
-    │   ├── Lectura.pdf
-    │   └── Video.mp4
-```
-
-**Con activar:**
-```
-dumps/
-└── 1678_FMI/
-    ├── contents.json
-    └── sections/
-        ├── 01_Tema 1/
-        │   ├── section.json
-        │   └── 000_Lectura/
-        │       ├── module.json
-        │       └── Lectura.pdf
-```
-
-### `FULL_SANITIZER = True`
-Reemplaza espacios con guiones bajos en los nombres de archivos (útil en sistemas con restricciones).
-
-## 📍 Salida de Archivos
-
-Todos los archivos se guardan en la carpeta `dumps/`:
-
-```
-dumps/
-├── [Curso 1]/
-# 📚 MooviDump Enhanced
-
-> Herramienta para descargar y organizar automáticamente los recursos de tus cursos Moodle.
-
-Una utilidad simple y robusta para exportar los archivos y estructura (tema → módulo → archivo)
-de los cursos en los que estás matriculado, guardándolos en una carpeta `dumps/` local.
-
----
-
-## ✨ Características principales
-
-- Inicio de sesión con credenciales de Moodle (entradas seguras con `getpass`).
-- Descarga de los recursos por curso/tema/módulo y organización en carpetas.
-- Evita re-descargar ficheros existentes (por nombre) a menos que uses `--force`.
-- `rich` para tablas y salida amigable en terminal.
-- Reintentos y timeouts para llamadas HTTP con `requests.Session`.
-- Modos interactivos para no guardar la contraseña (temporal) o guardarla en `.env`.
-
----
-
-## Requisitos
-
-- Python 3.8+
-- Paquetes (instálalos con):
-
-```bash
-python -m pip install -r requirements.txt
-```
-
----
-
-## Instalación rápida
-
-1. Clona o descarga este repositorio.
-2. Copia el archivo de ejemplo y rellena tus credenciales (opcional):
+Ejecuta `run.py` para elegir entre terminal, interfaz gráfica o navegador local:
 
 ```powershell
-copy example.env .env
-# Luego edita .env con tu editor preferido
+uv run run.py
 ```
 
+En el modo terminal puedes elegir si usar las credenciales de `.env`, introducirlas solo para esa ejecución o guardarlas.
 
----
-
-## Uso (rápido)
-
-Modo interactivo y asistente: ejecuta el helper `run.py` y sigue las indicaciones:
+También puedes seleccionar el modo directamente:
 
 ```powershell
-python run.py
+uv run run.py --mode 1
+uv run run.py --mode 2
+uv run run.py --mode 3
 ```
 
-También puedes ejecutar directamente `main.py` si ya tienes `MOODLE_SITE`, `MOODLE_USERNAME` y `MOODLE_PASSWORD`
-definidos en tu entorno o en un fichero `.env`:
+### Línea de comandos
+
+Ejecuta `main.py` si `MOODLE_SITE`, `MOODLE_USERNAME` y `MOODLE_PASSWORD` están definidos en el entorno o en `.env`:
 
 ```bash
-python main.py [--force] [--verbose]
+uv run main.py [--force] [--verbose] [--jobs 4] [--report report.json]
 ```
 
-Opciones CLI:
-- `--force` : Fuerza la re-descarga de archivos aunque ya existan.
-- `--verbose` : Activa logging en nivel `DEBUG`.
+Opciones disponibles:
 
-### Interfaz gráfica (sin terminal)
+- `--force`: fuerza la redescarga de archivos aunque ya existan.
+- `--verbose`: activa el logging en nivel `DEBUG`.
+- `--jobs`: establece el número máximo de descargas paralelas.
+- `--report`: guarda un resumen JSON en la ruta indicada.
+- `--all-courses`: descarga todos los cursos visibles sin preguntar.
+- `--courses 1684,1685`: descarga los cursos indicados por índice visible o por ID.
+- `--list-courses`: muestra los cursos visibles como JSON y termina.
 
-Puedes usar la app visual:
+Las descargas interrumpidas dejan un fichero `.part` y se reanudan en la siguiente ejecución si el servidor Moodle admite solicitudes parciales.
+
+### Interfaz gráfica
+
+La interfaz gráfica permite introducir las credenciales, guardar o no la contraseña en `.env`, elegir todos los cursos o una lista de IDs, forzar la redescarga y consultar el log:
 
 ```powershell
-python run_gui.py
+uv run run_gui.py
 ```
 
-Incluye:
-- Formulario de credenciales (site, usuario, contraseña).
-- Opción para guardar contraseña en `.env` o usarla solo temporalmente.
-- Opción de forzar redescarga (`--force`).
-- Selección de cursos sin prompts de terminal (todos o lista de IDs).
-- Panel de logs en tiempo real.
+### Ejecutable de Windows
 
-En ejecución por CLI también puedes evitar prompts con:
-
-```bash
-python main.py --all-courses
-python main.py --courses 1684,1685,1702
-```
-
-### Generar `.exe` (Windows)
-
-Compila la interfaz gráfica como ejecutable con:
+Para generar el ejecutable de la interfaz gráfica:
 
 ```powershell
 .\build_exe.ps1
 ```
 
-Resultado:
-- `dist/MooviDumpEnhanced.exe`
+El resultado es `dist/MooviDumpEnhanced.exe`. El ejecutable incluye `main.py` como worker. La carpeta `dumps/` y el archivo `.env` se crean junto al ejecutable.
 
-Nota:
-- El `.exe` ya incluye internamente `main.py` para ejecutar la descarga en modo worker.
-- La carpeta `dumps/` y el archivo `.env` se crean junto al propio ejecutable.
+### Modo navegador local
 
----
+El modo navegador busca una carpeta `web-server/`, `web/` o `frontend/`. Al seleccionarlo desde `run.py`, el lanzador comprueba `pnpm`, instala las dependencias si todavía no existe `node_modules/`, inicia el servidor y abre el navegador. También puedes hacerlo manualmente desde la carpeta del frontend:
 
-## Modos de ejecución (`run.py`)
+```powershell
+cd web-server
+pnpm install
+pnpm run dev
+```
 
-Al ejecutar `run.py` se ofrece un asistente con tres modos:
+El servidor usa el puerto `3000` por defecto y busca el siguiente puerto libre si está ocupado. Puedes cambiar el puerto inicial con la variable de entorno `PORT`. Abre la URL que muestra el lanzador si el navegador no se abre automáticamente.
 
-1) Usar `.env` existente (si existe).
-2) Introducir credenciales temporales para esta ejecución (no se guardan).
-3) Introducir credenciales y guardarlas en `.env` para usos futuros.
-
-Por seguridad, la contraseña no se imprime en pantalla ni se guarda por defecto a menos que elijas la opción 3.
-
----
+La interfaz web obtiene los cursos mediante `main.py --list-courses`, lanza las descargas como procesos hijos y muestra el progreso y el log.
 
 ## Estructura de salida
 
-Los archivos se guardan bajo `dumps/` con una estructura anidada por curso → sección → módulo.
+Por defecto, los archivos se guardan bajo `dumps/` con una estructura anidada por curso y sección:
 
-Ejemplo:
-
-```
+```text
 dumps/
 └── FMI/
     ├── Tema 1/
@@ -201,32 +121,21 @@ dumps/
         └── ...
 ```
 
-Si `DUMP_ALL = True` en `main.py`, se crean snapshots JSON adicionales por sección y módulo.
----
+Si `DUMP_ALL = True` en `main.py`, también se guardan snapshots JSON de cursos, secciones y módulos.
 
 ## Personalización
 
-- `COURSE_ALIASES` en `main.py`: mapea `courseid` → nombre de carpeta deseado.
-- `DUMP_ALL` y `FULL_SANITIZER` en `main.py` controlan nivel de detalle y formato de nombres.
+- `COURSE_ALIASES` en `main.py` permite asignar nombres de carpeta a IDs de curso.
+- `DUMP_ALL` añade los snapshots JSON.
+- `FULL_SANITIZER` reemplaza los espacios por guiones bajos en los nombres generados.
 
----
+## Solución de problemas
 
-## Troubleshooting
+- `login failed`: revisa el usuario, la contraseña y `MOODLE_SITE`.
+- `Cannot connect`: comprueba la URL y la conectividad.
+- `No courses found`: comprueba que tu usuario está matriculado en cursos visibles.
+- Los archivos no se descargan: revisa los permisos del recurso en Moodle.
 
-- `login failed` → Revisa usuario/contraseña y `MOODLE_SITE`.
-- `Cannot connect` → Verifica URL y conectividad.
-- `No courses found` → Comprueba que tu usuario está matriculado en cursos.
-- `Archivos no se descargan` → Revisa permisos en Moodle (algunos recursos pueden requerir roles/fuentes específicas).
+Usa `--verbose` para obtener más información en el log. No compartas credenciales al enviar un informe.
 
-Si necesitas más detalle, ejecuta con `--verbose` y comparte el log (recortando cualquier credencial).
-
----
-
-## Agradecimientos
-
-Gracias a Tyr7z por el código base
-
-
----
-
-©️ 2026 — MooviDump Enhanced by Lord_Alastor78
+Gracias a Tyr7z por el código base.

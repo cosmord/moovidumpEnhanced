@@ -19,6 +19,8 @@ import logging
 import argparse
 import shutil
 import time
+from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -44,14 +46,23 @@ DOWNLOAD_CHUNK_SIZE = 64 * 1024
 DOWNLOAD_CONNECT_TIMEOUT = 15
 DOWNLOAD_RETRY_ATTEMPTS = 2
 DOWNLOAD_PROGRESS_EVERY_MB = 5
+MAX_DOWNLOAD_WORKERS = 4
 
 # Logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 console = Console()
 
+SITE = ""
+WEBSERVICE_URL = ""
+USERNAME = None
+PASSWORD = None
+FORCE_DOWNLOAD = False
+DUMP_ALL = False
+FULL_SANITIZER = False
 
-def parse_args():
+
+def parse_args(argv=None):
     p = argparse.ArgumentParser(description="MooviDump Enhanced")
     p.add_argument("--force", action="store_true", help="Force re-download of files even if present")
     p.add_argument("--verbose", action="store_true", help="Verbose logging (debug)")
@@ -62,16 +73,76 @@ def parse_args():
         default="",
         help="Comma-separated list of course indexes/IDs to download without prompting",
     )
-    return p.parse_args()
+    p.add_argument(
+        "--report",
+        type=str,
+        default="",
+        help="Write a JSON summary report to the given path after the run finishes",
+    )
+    p.add_argument(
+        "--jobs",
+        type=int,
+        default=MAX_DOWNLOAD_WORKERS,
+        help="Maximum number of parallel file downloads",
+    )
+    p.add_argument(
+        "--list-courses",
+        action="store_true",
+        help="Print visible courses as JSON and exit",
+    )
+    return p.parse_args(argv)
 
 
-# Setup requests session with retries
-session = requests.Session()
-retries = Retry(total=RETRIES, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["HEAD", "GET", "OPTIONS", "POST"])  # type: ignore
-adapter = HTTPAdapter(max_retries=retries)
-session.mount("https://", adapter)
-session.mount("http://", adapter)
-session.headers.update(HEADERS)
+def parse_course_selection(selection: str, visible_courses: list[dict]) -> list[int]:
+    """Convert a comma-separated selection into course IDs.
+
+    Values can be 1-based visible course indexes or explicit course IDs.
+    Invalid tokens are ignored with a warning.
+    """
+    selected_ids: list[int] = []
+    seen_ids: set[int] = set()
+
+    for raw_value in [part.strip() for part in selection.split(",") if part.strip()]:
+        resolved_id = None
+
+        if raw_value.isdigit():
+            index = int(raw_value)
+            if 1 <= index <= len(visible_courses):
+                resolved_id = visible_courses[index - 1].get("id")
+            else:
+                resolved_id = int(raw_value)
+        else:
+            try:
+                resolved_id = int(raw_value)
+            except ValueError:
+                logger.warning("Ignoring invalid course selector: %s", raw_value)
+
+        if resolved_id is None:
+            continue
+
+        if resolved_id not in seen_ids:
+            seen_ids.add(resolved_id)
+            selected_ids.append(resolved_id)
+
+    return selected_ids
+
+
+def write_run_report(report_path: Path, report_data: dict) -> None:
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report_data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def course_display_name(course: dict) -> str:
+    full_name = course.get("fullname", "") or ""
+    return (full_name.split(":", 1)[1].strip() if ":" in full_name else full_name.strip()) or f"course_{course.get('id')}"
+
+
+def visible_course_payload(course: dict) -> dict:
+    return {
+        "id": course.get("id"),
+        "fullname": course.get("fullname", ""),
+        "display_name": course_display_name(course),
+    }
 
 
 def prompt_for_credentials():
@@ -139,29 +210,23 @@ def choose_config():
         prompt_for_credentials()
 
 
-# Parse CLI args early so verbose affects initial messages
-args = parse_args()
-if args.verbose:
-    logger.setLevel(logging.DEBUG)
+def create_http_session() -> requests.Session:
+    session_obj = requests.Session()
+    retries = Retry(
+        total=RETRIES,
+        backoff_factor=0.5,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
+    )  # type: ignore
+    adapter = HTTPAdapter(max_retries=retries)
+    session_obj.mount("https://", adapter)
+    session_obj.mount("http://", adapter)
+    session_obj.headers.update(HEADERS)
+    return session_obj
 
-FORCE_DOWNLOAD = bool(getattr(args, "force", False))
 
-choose_config()
-
-SITE = os.getenv("MOODLE_SITE")
-if not SITE:
-    logger.error("Missing MOODLE_SITE in environment.")
-    sys.exit(1)
-
-# Normalize SITE to avoid double slashes when building URLs
-SITE = SITE.rstrip("/")
-
-WEBSERVICE_URL = f"{SITE}/webservice/rest/server.php"
-USERNAME = os.getenv("MOODLE_USERNAME")
-PASSWORD = os.getenv("MOODLE_PASSWORD")
-
-DUMP_ALL = False
-FULL_SANITIZER = False
+# Setup requests session with retries
+session = create_http_session()
 
 COURSE_ALIASES = {
     1678: "FMI",
@@ -190,7 +255,7 @@ COURSE_ALIASES = {
     1702: "Dirección e xestión de proxectos",
     1703: "Teoría de autómatas e linguaxes formais",
     1704: "Concorrencia e distribución",
-    
+
 
 
 
@@ -298,22 +363,36 @@ def collapse_single_file_dirs(root_path, min_depth=3):
     return collapsed
 
 
-def download_to_path(download_url, target_path):
+def download_to_path(download_url, target_path, request_session=None, resume=True):
     """Descarga robusta a disco usando streaming y archivo temporal.
 
     Devuelve (ok, bytes_written). En caso de fallo limpia el temporal para evitar
     ficheros corruptos parciales.
     """
     temp_path = target_path.with_suffix(f"{target_path.suffix}.part")
+    http_session = request_session or session
+
+    if not resume and temp_path.exists():
+        try:
+            temp_path.unlink()
+        except Exception:
+            pass
+
+    existing_size = temp_path.stat().st_size if resume and temp_path.exists() else 0
 
     for attempt in range(1, DOWNLOAD_RETRY_ATTEMPTS + 1):
         try:
-            with session.get(
+            headers = {}
+            if existing_size > 0:
+                headers["Range"] = f"bytes={existing_size}-"
+
+            with http_session.get(
                 download_url,
+                headers=headers,
                 timeout=(DOWNLOAD_CONNECT_TIMEOUT, DOWNLOAD_TIMEOUT),
                 stream=True,
             ) as response:
-                if response.status_code != 200:
+                if response.status_code not in (200, 206):
                     logger.warning(
                         "HTTP %s when downloading %s (attempt %d/%d)",
                         response.status_code,
@@ -323,8 +402,15 @@ def download_to_path(download_url, target_path):
                     )
                     continue
 
+                append_mode = response.status_code == 206 and existing_size > 0
+                if existing_size > 0 and not append_mode:
+                    logger.debug("Server did not resume %s; restarting download from scratch", target_path.name)
+                    existing_size = 0
+
                 content_length = response.headers.get("Content-Length", "").strip()
                 expected_size = int(content_length) if content_length.isdigit() else None
+                if append_mode and expected_size is not None:
+                    expected_size += existing_size
                 if expected_size is not None and expected_size > 0:
                     logger.info(
                         "Starting %s (%.2f MB)",
@@ -332,11 +418,11 @@ def download_to_path(download_url, target_path):
                         expected_size / (1024 * 1024),
                     )
 
-                bytes_written = 0
+                bytes_written = existing_size if append_mode else 0
                 last_progress_bytes = 0
                 start_time = time.monotonic()
 
-                with open(temp_path, "wb") as f:
+                with open(temp_path, "ab" if append_mode else "wb") as f:
                     for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
                         if not chunk:
                             continue
@@ -408,7 +494,7 @@ def login(username, password):
             except json.JSONDecodeError:
                 logger.error("Login: invalid JSON response")
                 return False
-            
+
             # Check for Moodle error responses
             if "error" in data:
                 logger.error("Login error: %s", data.get('error', 'Unknown error'))
@@ -513,7 +599,196 @@ def call_moodle_mobile_functions(requests_list):
         return None
 
 
-if __name__ == "__main__":
+def build_download_tasks(courses, selected_ids, dumps_dir, force_download):
+    tasks = []
+    skipped_count = 0
+    failed_count = 0
+    skipped_files: list[str] = []
+    failed_files: list[dict[str, str]] = []
+    processed_courses: list[dict[str, str | int]] = []
+
+    for course in courses or []:
+        if course.get("hidden"):
+            continue
+
+        course_id = course["id"]
+        alias = COURSE_ALIASES.get(course_id)
+        if alias:
+            cleaned_name = alias
+        else:
+            full_name = course.get("fullname", "") or ""
+            cleaned_name = (full_name.split(":", 1)[1].strip() if ":" in full_name else full_name.strip()) or f"course_{course_id}"
+
+        folder_name = sanitize(cleaned_name)
+        if DUMP_ALL:
+            folder_name = f"{course_id}_{sanitize(cleaned_name)}"
+        course_dir = dumps_dir / folder_name
+        course_dir.mkdir(parents=True, exist_ok=True)
+        processed_courses.append({"id": course_id, "name": cleaned_name, "folder": str(course_dir.relative_to(dumps_dir))})
+        logger.info("Processing course [%s] %s", course_id, cleaned_name)
+        logger.debug("Output directory: %s", course_dir)
+
+        contents = post_webservice("core_course_get_contents", {"courseid": course_id})
+        if not contents:
+            logger.warning("No contents found for course %s", course_id)
+            continue
+
+        if DUMP_ALL:
+            with open(course_dir / "contents.json", "w", encoding="utf-8") as f:
+                json.dump(contents, f, indent=2, ensure_ascii=False)
+
+        sections_root = course_dir / "sections" if DUMP_ALL else course_dir
+        sections_root.mkdir(parents=True, exist_ok=True)
+
+        for section in contents or []:
+            section_number = section.get("section", 0)
+            section_name = section.get("name")
+
+            section_folder_name = sanitize(section_name or f"section_{section_number}")
+            if DUMP_ALL:
+                section_folder_name = f"{int(section_number):02d}_{sanitize(section_name or f'section_{section_number}') }"
+            section_dir = sections_root / section_folder_name
+            section_dir.mkdir(parents=True, exist_ok=True)
+
+            if DUMP_ALL:
+                with open(section_dir / "section.json", "w", encoding="utf-8") as f:
+                    json.dump(section, f, indent=2, ensure_ascii=False)
+
+            for module_index, module in enumerate(section.get("modules", [])):
+                module_name = module.get("name")
+                module_folder_name = sanitize(module_name or f"module_{module_index}")
+                if DUMP_ALL:
+                    module_folder_name = f"{module_index:03d}_{sanitize(module_name or f'module_{module_index}')}"
+                module_dir = section_dir / module_folder_name
+                module_dir.mkdir(parents=True, exist_ok=True)
+
+                if DUMP_ALL:
+                    with open(module_dir / "module.json", "w", encoding="utf-8") as f:
+                        json.dump(module, f, indent=2, ensure_ascii=False)
+
+                for content in module.get("contents", []):
+                    if content.get("type") != "file":
+                        continue
+
+                    file_name = sanitize(content.get("filename") or "file")
+                    target_path = module_dir / file_name
+                    relative_target = str(target_path.relative_to(dumps_dir))
+
+                    if target_path.exists() and not force_download:
+                        logger.info("Skipping download; file already exists: %s", target_path)
+                        skipped_count += 1
+                        skipped_files.append(relative_target)
+                        continue
+
+                    file_url = content.get("fileurl")
+                    download_url = pluginfile_to_token_url(file_url, private_access_key)
+                    if not download_url:
+                        logger.warning("Skipping download: missing access key or URL for %s", file_name)
+                        failed_count += 1
+                        failed_files.append({"path": relative_target, "reason": "missing_access_key_or_url"})
+                        continue
+
+                    tasks.append(
+                        {
+                            "download_url": download_url,
+                            "target_path": target_path,
+                            "relative_target": relative_target,
+                            "file_name": file_name,
+                            "resume": not force_download,
+                        }
+                    )
+
+    return tasks, {
+        "skipped_count": skipped_count,
+        "failed_count": failed_count,
+        "skipped_files": skipped_files,
+        "failed_files": failed_files,
+        "processed_courses": processed_courses,
+    }
+
+
+def download_task_worker(task):
+    worker_session = create_http_session()
+    ok, bytes_written = download_to_path(
+        task["download_url"],
+        task["target_path"],
+        request_session=worker_session,
+        resume=task["resume"],
+    )
+    return {
+        "ok": ok,
+        "bytes_written": bytes_written,
+        "relative_target": task["relative_target"],
+        "file_name": task["file_name"],
+    }
+
+
+def execute_download_tasks(tasks, max_workers):
+    downloaded_count = 0
+    failed_count = 0
+    downloaded_files: list[str] = []
+    failed_files: list[dict[str, str]] = []
+
+    if not tasks:
+        return {
+            "downloaded_count": 0,
+            "failed_count": 0,
+            "downloaded_files": downloaded_files,
+            "failed_files": failed_files,
+        }
+
+    worker_count = max(1, min(max_workers, len(tasks)))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_map = {executor.submit(download_task_worker, task): task for task in tasks}
+        for future in as_completed(future_map):
+            task = future_map[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                failed_count += 1
+                failed_files.append({"path": task["relative_target"], "reason": str(exc)})
+                logger.exception("Unexpected error downloading %s", task["relative_target"])
+                continue
+
+            if result["ok"]:
+                downloaded_count += 1
+                downloaded_files.append(result["relative_target"])
+                size_mb = result["bytes_written"] / (1024 * 1024)
+                logger.info("Downloaded %s (%.2f MB)", result["file_name"], size_mb)
+            else:
+                failed_count += 1
+                failed_files.append({"path": result["relative_target"], "reason": "download_failed"})
+
+    return {
+        "downloaded_count": downloaded_count,
+        "failed_count": failed_count,
+        "downloaded_files": downloaded_files,
+        "failed_files": failed_files,
+    }
+
+
+def main(argv=None):
+    global SITE, WEBSERVICE_URL, USERNAME, PASSWORD, FORCE_DOWNLOAD, DUMP_ALL, FULL_SANITIZER
+    global private_access_key, user_id
+
+    runtime_args = parse_args(argv)
+    if runtime_args.verbose:
+        logger.setLevel(logging.DEBUG)
+
+    FORCE_DOWNLOAD = bool(getattr(runtime_args, "force", False))
+
+    choose_config()
+
+    SITE = os.getenv("MOODLE_SITE")
+    if not SITE:
+        logger.error("Missing MOODLE_SITE in environment.")
+        sys.exit(1)
+
+    SITE = SITE.rstrip("/")
+    WEBSERVICE_URL = f"{SITE}/webservice/rest/server.php"
+    USERNAME = os.getenv("MOODLE_USERNAME")
+    PASSWORD = os.getenv("MOODLE_PASSWORD")
+
     if token is None:
         if USERNAME and PASSWORD:
             if login(USERNAME, PASSWORD):
@@ -557,40 +832,28 @@ if __name__ == "__main__":
 
     logger.info("Found %d course(s)", len(courses))
 
-    # Present courses and ask whether to download all or select specific ones
     visible_courses = [c for c in courses if not c.get("hidden")]
+    if runtime_args.list_courses:
+        payload = {"courses": [visible_course_payload(course) for course in visible_courses]}
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False))
+        sys.stdout.flush()
+        return
+
     logger.info("Cursos disponibles:")
     table = Table(show_header=True, header_style="bold green")
     table.add_column("#", width=4)
     table.add_column("Course ID", width=10)
     table.add_column("Name")
     for i, c in enumerate(visible_courses, start=1):
-        full_name = c.get("fullname", "") or ""
-        display = (full_name.split(":", 1)[1].strip() if ":" in full_name else full_name.strip()) or f"course_{c.get('id')}"
-        table.add_row(str(i), str(c.get('id')), display)
+        table.add_row(str(i), str(c.get("id")), course_display_name(c))
     console.print(table)
 
     selected_ids = []
-    if args.all_courses:
+    if runtime_args.all_courses:
         selected_ids = [c.get("id") for c in visible_courses]
         logger.info("Modo no interactivo: descargando todos los cursos visibles.")
-    elif args.courses:
-        parts = [p.strip() for p in args.courses.split(",") if p.strip()]
-        selected_set = set()
-        for p in parts:
-            if p.isdigit():
-                # could be index or id; prefer index if within range
-                idx = int(p)
-                if 1 <= idx <= len(visible_courses):
-                    selected_set.add(visible_courses[idx - 1].get("id"))
-                else:
-                    selected_set.add(int(p))
-            else:
-                try:
-                    selected_set.add(int(p))
-                except ValueError:
-                    logger.warning("Ignoring invalid course selector: %s", p)
-        selected_ids = list(selected_set)
+    elif runtime_args.courses:
+        selected_ids = parse_course_selection(runtime_args.courses, visible_courses)
         logger.info("Modo no interactivo: seleccionados %d curso(s).", len(selected_ids))
     else:
         choice = input("\nDescargar todos los cursos? [y/N]: ").strip().lower() or "n"
@@ -601,133 +864,33 @@ if __name__ == "__main__":
             if not sel:
                 console.print("Operación cancelada.", style="yellow")
                 sys.exit(0)
-            parts = [p.strip() for p in sel.split(",") if p.strip()]
-            selected_set = set()
-            for p in parts:
-                if p.isdigit():
-                    # could be index or id; prefer index if within range
-                    idx = int(p)
-                    if 1 <= idx <= len(visible_courses):
-                        selected_set.add(visible_courses[idx - 1].get("id"))
-                    else:
-                        selected_set.add(int(p))
-                else:
-                    try:
-                        selected_set.add(int(p))
-                    except ValueError:
-                        pass
-            selected_ids = list(selected_set)
+            selected_ids = parse_course_selection(sel, visible_courses)
 
     if not selected_ids:
         logger.warning("No hay cursos seleccionados. Finalizando.")
         sys.exit(0)
 
-    # Filter courses to only selected ones
-    courses = [c for c in courses if c.get("id") in (selected_ids or [])]
+    selected_course_set = set(selected_ids)
+    selected_courses = [c for c in courses if c.get("id") in selected_course_set]
 
     dumps_dir = Path("dumps")
     dumps_dir.mkdir(parents=True, exist_ok=True)
 
-    downloaded_count = 0
-    skipped_count = 0
-    failed_count = 0
+    tasks, preflight = build_download_tasks(selected_courses, selected_ids, dumps_dir, FORCE_DOWNLOAD)
+    download_summary = execute_download_tasks(tasks, runtime_args.jobs)
 
-    for course in courses or []:
-        if course.get("hidden"):
-            continue
-        course_id = course["id"]
-        alias = COURSE_ALIASES.get(course_id)
-        if alias:
-            cleaned_name = alias
-        else:
-            full_name = course.get("fullname", "") or ""
-            cleaned_name = (full_name.split(":", 1)[1].strip() if ":" in full_name else full_name.strip()) or f"course_{course_id}"
+    skipped_count = preflight["skipped_count"]
+    failed_count = preflight["failed_count"] + download_summary["failed_count"]
+    downloaded_count = download_summary["downloaded_count"]
+    downloaded_files = download_summary["downloaded_files"]
+    skipped_files = preflight["skipped_files"]
+    failed_files = preflight["failed_files"] + download_summary["failed_files"]
+    processed_courses = preflight["processed_courses"]
 
-        folder_name = sanitize(cleaned_name)
-        if DUMP_ALL:
-            folder_name = f"{course_id}_{sanitize(cleaned_name)}"
-        course_dir = dumps_dir / folder_name
-        course_dir.mkdir(parents=True, exist_ok=True)
-        logger.info("Processing course [%s] %s", course_id, cleaned_name)
-        logger.debug("Output directory: %s", course_dir)
-
-        contents = post_webservice("core_course_get_contents", {"courseid": course_id})
-        
-        if not contents:
-            logger.warning("No contents found for course %s", course_id)
-            continue
-
-        if DUMP_ALL:
-            with open(course_dir / "contents.json", "w", encoding="utf-8") as f:
-                json.dump(contents, f, indent=2, ensure_ascii=False)
-
-        sections_root = course_dir
-        if DUMP_ALL:
-            sections_root = course_dir / "sections"
-        sections_root.mkdir(parents=True, exist_ok=True)
-
-        for section in contents or []:
-            section_number = section.get("section", 0)
-            section_name = section.get("name")
-
-            section_folder_name = sanitize(section_name or f"section_{section_number}")
-            if DUMP_ALL:
-                section_folder_name = f"{int(section_number):02d}_{sanitize(section_name or f'section_{section_number}')}"
-            section_dir = sections_root / section_folder_name
-            section_dir.mkdir(parents=True, exist_ok=True)
-
-            if DUMP_ALL:
-                with open(section_dir / "section.json", "w", encoding="utf-8") as f:
-                    json.dump(section, f, indent=2, ensure_ascii=False)
-
-            for module_index, module in enumerate(section.get("modules", [])):
-                module_name = module.get("name")
-                module_folder_name = sanitize(module_name or f"module_{module_index}")
-                if DUMP_ALL:
-                    module_folder_name = f"{module_index:03d}_{sanitize(module_name or f'module_{module_index}')}"
-                module_dir = section_dir / module_folder_name
-                module_dir.mkdir(parents=True, exist_ok=True)
-
-                if DUMP_ALL:
-                    with open(module_dir / "module.json", "w", encoding="utf-8") as f:
-                        json.dump(module, f, indent=2, ensure_ascii=False)
-
-                for content in module.get("contents", []):
-                    if content.get("type") != "file":
-                        continue
-
-                    file_name = sanitize(content.get("filename") or "file")
-                    target_path = module_dir / file_name
-
-                    # Skip download if file already exists (same name) unless forcing
-                    if target_path.exists() and not FORCE_DOWNLOAD:
-                        logger.info("Skipping download; file already exists: %s", target_path)
-                        skipped_count += 1
-                        continue
-
-                    file_url = content.get("fileurl")
-                    download_url = pluginfile_to_token_url(file_url, private_access_key)
-                    if not download_url:
-                        logger.warning("Skipping download: missing access key or URL for %s", file_name)
-                        failed_count += 1
-                        continue
-
-                    # Use ASCII-only text to avoid encoding issues on legacy Windows consoles.
-                    logger.info("Downloading: %s", file_name)
-                    ok, bytes_written = download_to_path(download_url, target_path)
-                    if ok:
-                        downloaded_count += 1
-                        size_mb = bytes_written / (1024 * 1024)
-                        logger.info("Downloaded %s (%.2f MB)", file_name, size_mb)
-                    else:
-                        failed_count += 1
-
-    # Aplana carpetas de modulo que solo contienen un archivo descargado.
     logger.info("Colapsando carpetas de un solo archivo en %s...", dumps_dir)
     collapsed = collapse_single_file_dirs(dumps_dir, min_depth=3)
     logger.info("Carpetas colapsadas: %d", collapsed)
 
-    # Limpieza de carpetas vacías dentro de `dumps/`
     logger.info("Eliminando carpetas vacías en %s...", dumps_dir)
     removed = remove_empty_dirs(dumps_dir)
     logger.info("Carpetas eliminadas: %d", removed)
@@ -738,3 +901,31 @@ if __name__ == "__main__":
         skipped_count,
         failed_count,
     )
+
+    if runtime_args.report:
+        report_path = Path(runtime_args.report).expanduser()
+        report_data = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "site": SITE,
+            "dumps_dir": str(dumps_dir.resolve()),
+            "selected_course_ids": selected_ids,
+            "processed_courses": processed_courses,
+            "counts": {
+                "downloaded": downloaded_count,
+                "skipped": skipped_count,
+                "failed": failed_count,
+                "collapsed_dirs": collapsed,
+                "removed_empty_dirs": removed,
+            },
+            "files": {
+                "downloaded": downloaded_files,
+                "skipped": skipped_files,
+                "failed": failed_files,
+            },
+        }
+        write_run_report(report_path, report_data)
+        logger.info("JSON report written to %s", report_path)
+
+
+if __name__ == "__main__":
+    main()

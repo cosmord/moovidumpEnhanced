@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MooviDump Enhanced Web</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0b1220;
+            --panel: #111a2c;
+            --panel-2: #15213a;
+            --line: rgba(255, 255, 255, 0.08);
+            --text: #e8eef9;
+            --muted: #95a3bc;
+            --accent: #54a3ff;
+            --accent-2: #8ce2b0;
+            --danger: #ff6b6b;
+            --radius: 18px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Segoe UI, system-ui, sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(84, 163, 255, 0.16), transparent 30%),
+                radial-gradient(circle at top right, rgba(140, 226, 176, 0.12), transparent 24%),
+                linear-gradient(180deg, #09101c 0%, #0b1220 100%);
+            color: var(--text);
+        }
+
+        .shell {
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 28px;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, rgba(84, 163, 255, 0.18), rgba(140, 226, 176, 0.12));
+            border: 1px solid var(--line);
+            border-radius: 28px;
+            padding: 28px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 34px;
+        }
+
+        .subtitle {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 18px;
+            margin-top: 18px;
+        }
+
+        .card {
+            background: rgba(17, 26, 44, 0.92);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            padding: 18px;
+        }
+
+        .card h2 {
+            margin: 0 0 12px;
+            font-size: 18px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        label {
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        input,
+        textarea {
+            width: 100%;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--panel-2);
+            color: var(--text);
+            padding: 12px 14px;
+            font: inherit;
+        }
+
+        textarea {
+            min-height: 96px;
+            resize: vertical;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 14px;
+            padding: 12px 16px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.12s ease, opacity 0.12s ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+        }
+
+        .primary {
+            background: linear-gradient(135deg, var(--accent), #7b7dff);
+            color: white;
+        }
+
+        .secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text);
+        }
+
+        .danger {
+            background: rgba(255, 107, 107, 0.16);
+            color: #ffdada;
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .course-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+            max-height: 400px;
+            overflow: auto;
+            padding-right: 4px;
+        }
+
+        .course-item {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+        }
+
+        .course-item strong {
+            display: block;
+        }
+
+        .course-item small {
+            color: var(--muted);
+        }
+
+        .log {
+            margin-top: 12px;
+            background: #06090f;
+            border-radius: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 14px;
+            min-height: 280px;
+            max-height: 460px;
+            overflow: auto;
+            font: 12px/1.5 Consolas, monospace;
+            white-space: pre-wrap;
+            color: #d5e8ff;
+        }
+
+        .status {
+            color: var(--accent-2);
+            font-weight: 700;
+        }
+
+        .split {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+        }
+
+        @media (max-width: 980px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="shell">
+        <section class="hero">
+            <div class="split">
+                <div>
+                    <h1>MooviDump Enhanced Web</h1>
+                    <p class="subtitle">Servidor local para listar cursos, lanzar descargas y seguir el progreso en
+                        tiempo real.</p>
+                </div>
+                <div class="pill">Modo navegador local</div>
+            </div>
+        </section>
+
+        <section class="grid">
+            <div class="card">
+                <h2>Credenciales</h2>
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="site">Moodle site</label>
+                        <input id="site" value="https://moovi.uvigo.gal" />
+                    </div>
+                    <div class="field">
+                        <label for="jobs">Workers</label>
+                        <input id="jobs" type="number" min="1" max="12" value="4" />
+                    </div>
+                    <div class="field">
+                        <label for="username">Usuario</label>
+                        <input id="username" />
+                    </div>
+                    <div class="field">
+                        <label for="password">Contraseña</label>
+                        <input id="password" type="password" />
+                    </div>
+                    <div class="field">
+                        <label for="courseIds">IDs de cursos (opcional)</label>
+                        <textarea id="courseIds" placeholder="1684,1685,1702"></textarea>
+                    </div>
+                    <div class="field">
+                        <label for="saveEnv">Persistencia</label>
+                        <input id="saveEnv" type="checkbox" style="width: auto; margin-top: 10px;" />
+                        <span class="muted">Guardar credenciales en .env</span>
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="secondary" id="loadCourses">Cargar cursos</button>
+                    <button class="primary" id="startDownload">Iniciar descarga</button>
+                    <button class="danger" id="cancelDownload" disabled>Cancelar</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="toolbar">
+                    <h2>Cursos</h2>
+                    <span class="pill" id="courseCount">0 visibles</span>
+                </div>
+                <div class="course-list" id="courseList">
+                    <div class="muted">Carga cursos para empezar.</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card" style="margin-top: 18px;">
+            <div class="toolbar">
+                <h2>Estado y log</h2>
+                <div class="status" id="runStatus">Preparado</div>
+            </div>
+            <div class="log" id="log"></div>
+        </section>
+    </main>
+
+    <script>
+        const state = {
+            courses: [],
+            selected: new Set(),
+            sessionId: null,
+            eventSource: null,
+        };
+
+        const $ = (id) => document.getElementById(id);
+        const log = $("log");
+        const runStatus = $("runStatus");
+        const courseList = $("courseList");
+        const courseCount = $("courseCount");
+        const cancelDownload = $("cancelDownload");
+
+        function appendLog(text) {
+            log.textContent += text;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function setStatus(text) {
+            runStatus.textContent = text;
+        }
+
+        function renderCourses() {
+            courseList.innerHTML = "";
+            courseCount.textContent = `${state.courses.length} visibles`;
+
+            if (!state.courses.length) {
+                courseList.innerHTML = '<div class="muted">No hay cursos cargados.</div>';
+                return;
+            }
+
+            for (const course of state.courses) {
+                const item = document.createElement('label');
+                item.className = 'course-item';
+                item.innerHTML = `
+            <input type="checkbox" ${state.selected.has(String(course.id)) ? 'checked' : ''} data-course-id="${course.id}" />
+            <div>
+              <strong>${course.display_name}</strong>
+              <small>ID ${course.id}</small>
+            </div>
+            <span class="pill">${course.fullname || 'Visible'}</span>
+          `;
+                item.querySelector('input').addEventListener('change', (event) => {
+                    const id = String(course.id);
+                    if (event.target.checked) state.selected.add(id); else state.selected.delete(id);
+                });
+                courseList.appendChild(item);
+            }
+        }
+
+        async function loadCourses() {
+            setStatus('Cargando cursos...');
+            appendLog('\n=== Carga de cursos ===\n');
+
+            const payload = {
+                site: $('site').value.trim(),
+                username: $('username').value.trim(),
+                password: $('password').value,
+                saveEnv: $('saveEnv').checked,
+            };
+
+            const response = await fetch('/api/courses', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                setStatus('Error');
+                appendLog(`ERROR: ${data.error || 'No se pudieron cargar los cursos'}\n`);
+                return;
+            }
+
+            state.courses = data.courses || [];
+            state.selected = new Set(state.courses.map((course) => String(course.id)));
+            renderCourses();
+            setStatus(`Cursos cargados: ${state.courses.length}`);
+            appendLog(`Cursos cargados: ${state.courses.length}\n`);
+        }
+
+        function selectedCourseIds() {
+            if ($('courseIds').value.trim()) {
+                return $('courseIds').value.split(',').map((value) => value.trim()).filter(Boolean);
+            }
+            return Array.from(state.selected);
+        }
+
+        async function startDownload() {
+            if (!state.courses.length) {
+                await loadCourses();
+                if (!state.courses.length) return;
+            }
+
+            setStatus('Iniciando descarga...');
+            appendLog('\n=== Descarga ===\n');
+            cancelDownload.disabled = false;
+
+            const payload = {
+                site: $('site').value.trim(),
+                username: $('username').value.trim(),
+                password: $('password').value,
+                force: false,
+                jobs: Number($('jobs').value || '4'),
+                allCourses: !$('courseIds').value.trim(),
+                courseIds: selectedCourseIds(),
+                saveEnv: $('saveEnv').checked,
+            };
+
+            const response = await fetch('/api/download/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                setStatus('Error');
+                appendLog(`ERROR: ${data.error || 'No se pudo iniciar la descarga'}\n`);
+                cancelDownload.disabled = true;
+                return;
+            }
+
+            state.sessionId = data.sessionId;
+            setStatus(`Sesión ${state.sessionId}`);
+            openStream(state.sessionId);
+        }
+
+        function openStream(sessionId) {
+            if (state.eventSource) state.eventSource.close();
+            state.eventSource = new EventSource(`/api/sessions/${sessionId}/events`);
+            state.eventSource.addEventListener('log', (event) => {
+                const payload = JSON.parse(event.data);
+                appendLog(payload.line);
+            });
+            state.eventSource.addEventListener('status', (event) => {
+                const payload = JSON.parse(event.data);
+                setStatus(payload.status);
+                if (payload.status !== 'running') {
+                    cancelDownload.disabled = true;
+                    state.eventSource.close();
+                }
+            });
+            state.eventSource.addEventListener('done', (event) => {
+                const payload = JSON.parse(event.data);
+                appendLog(`\nProceso finalizado con código ${payload.exitCode}.\n`);
+                cancelDownload.disabled = true;
+                state.eventSource.close();
+            });
+            state.eventSource.onerror = () => {
+                appendLog('\n[stream cerrado]\n');
+            };
+        }
+
+        async function cancelSession() {
+            if (!state.sessionId) return;
+            await fetch(`/api/sessions/${state.sessionId}/cancel`, { method: 'POST' });
+            setStatus('Cancelando...');
+        }
+
+        $('loadCourses').addEventListener('click', loadCourses);
+        $('startDownload').addEventListener('click', startDownload);
+        cancelDownload.addEventListener('click', cancelSession);
+    </script>
+</body>
+
+</html>

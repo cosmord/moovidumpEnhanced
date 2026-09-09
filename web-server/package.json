@@ -1,0 +1,17 @@
+{
+    "name": "moovidump-enhanced-web",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@10.33.0",
+    "scripts": {
+        "dev": "tsx watch src/server.ts",
+        "build": "tsc -p tsconfig.json",
+        "start": "node dist/server.js"
+    },
+    "dependencies": {},
+    "devDependencies": {
+        "@types/node": "^22.15.17",
+        "tsx": "^4.19.4",
+        "typescript": "^5.8.3"
+    }
+}
