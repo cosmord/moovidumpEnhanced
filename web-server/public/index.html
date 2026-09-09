@@ -4,20 +4,22 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f0e8" />
     <title>MooviDump Enhanced Web</title>
     <style>
         :root {
-            color-scheme: dark;
-            --bg: #0b1220;
-            --panel: #111a2c;
-            --panel-2: #15213a;
-            --line: rgba(255, 255, 255, 0.08);
-            --text: #e8eef9;
-            --muted: #95a3bc;
-            --accent: #54a3ff;
-            --accent-2: #8ce2b0;
-            --danger: #ff6b6b;
-            --radius: 18px;
+            color-scheme: light;
+            --bg: #e9eee8;
+            --panel: #fffdf8;
+            --panel-2: #f1f5ef;
+            --line: #d9d2c5;
+            --text: #1d2420;
+            --muted: #4f5d54;
+            --accent: #b7f34a;
+            --accent-strong: #4f7412;
+            --ink: #1d2420;
+            --danger: #f07863;
+            --radius: 16px;
         }
 
         * {
@@ -26,55 +28,62 @@
 
         body {
             margin: 0;
-            font-family: Segoe UI, system-ui, sans-serif;
-            background:
-                radial-gradient(circle at top left, rgba(84, 163, 255, 0.16), transparent 30%),
-                radial-gradient(circle at top right, rgba(140, 226, 176, 0.12), transparent 24%),
-                linear-gradient(180deg, #09101c 0%, #0b1220 100%);
+            min-width: 320px;
+            font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+            background: linear-gradient(180deg, #e9eee8 0%, #f6f8f4 100%);
             color: var(--text);
         }
 
         .shell {
-            max-width: 1240px;
+            max-width: 1180px;
             margin: 0 auto;
-            padding: 28px;
+            padding: 32px 28px 48px;
         }
 
         .hero {
-            background: linear-gradient(135deg, rgba(84, 163, 255, 0.18), rgba(140, 226, 176, 0.12));
-            border: 1px solid var(--line);
-            border-radius: 28px;
-            padding: 28px;
-            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+            background: var(--ink);
+            border-radius: 24px;
+            padding: 32px;
+            color: #fffdf8;
+            box-shadow: 0 18px 38px rgba(29, 36, 32, 0.16);
         }
 
         h1 {
             margin: 0 0 8px;
-            font-size: 34px;
+            max-width: 12ch;
+            font-family: Georgia, serif;
+            font-size: clamp(2.5rem, 6vw, 4.8rem);
+            line-height: 0.95;
+            letter-spacing: -0.03em;
         }
 
         .subtitle {
             margin: 0;
-            color: var(--muted);
+            max-width: 55ch;
+            color: #cbd4c9;
+            line-height: 1.55;
         }
 
         .grid {
             display: grid;
-            grid-template-columns: 1.1fr 0.9fr;
-            gap: 18px;
-            margin-top: 18px;
+            grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+            gap: 20px;
+            margin-top: 20px;
         }
 
         .card {
-            background: rgba(17, 26, 44, 0.92);
+            background: var(--panel);
             border: 1px solid var(--line);
             border-radius: var(--radius);
-            padding: 18px;
+            padding: 22px;
+            box-shadow: 0 8px 20px rgba(29, 36, 32, 0.05);
         }
 
         .card h2 {
             margin: 0 0 12px;
-            font-size: 18px;
+            font-family: Georgia, serif;
+            font-size: 22px;
+            letter-spacing: -0.02em;
         }
 
         .form-grid {
@@ -92,22 +101,61 @@
         label {
             font-size: 13px;
             color: var(--muted);
+            font-weight: 700;
         }
 
         input,
         textarea {
             width: 100%;
-            border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            min-height: 46px;
+            border-radius: 10px;
+            border: 1px solid var(--line);
             background: var(--panel-2);
             color: var(--text);
             padding: 12px 14px;
             font: inherit;
+            transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
         }
 
         textarea {
             min-height: 96px;
             resize: vertical;
+        }
+
+        input[type="checkbox"] {
+            width: 20px;
+            min-height: 20px;
+            margin: 0;
+            accent-color: var(--accent-strong);
+        }
+
+        .check-label {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 10px;
+            min-height: 46px;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: var(--panel-2);
+            color: var(--text);
+            cursor: pointer;
+        }
+
+        input:focus-visible,
+        textarea:focus-visible,
+        button:focus-visible,
+        .course-item:has(input:focus-visible) {
+            outline: 3px solid rgba(137, 191, 25, 0.35);
+            outline-offset: 2px;
+        }
+
+        input:focus,
+        textarea:focus {
+            border-color: var(--accent-strong);
+            background: var(--panel);
+            box-shadow: 0 0 0 3px rgba(137, 191, 25, 0.12);
         }
 
         .actions {
@@ -119,31 +167,44 @@
 
         button {
             border: 0;
-            border-radius: 14px;
-            padding: 12px 16px;
+            min-height: 46px;
+            border-radius: 10px;
+            padding: 12px 18px;
             font: inherit;
             font-weight: 700;
             cursor: pointer;
-            transition: transform 0.12s ease, opacity 0.12s ease;
+            transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease;
         }
 
         button:hover {
             transform: translateY(-1px);
         }
 
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.45;
+            transform: none;
+        }
+
         .primary {
-            background: linear-gradient(135deg, var(--accent), #7b7dff);
-            color: white;
+            background: var(--accent);
+            color: var(--ink);
+            box-shadow: 0 6px 0 var(--accent-strong);
+        }
+
+        .primary:hover:not(:disabled) {
+            background: #c9ff6c;
         }
 
         .secondary {
-            background: rgba(255, 255, 255, 0.08);
+            background: var(--ink);
             color: var(--text);
+            color: #fffdf8;
         }
 
         .danger {
-            background: rgba(255, 107, 107, 0.16);
-            color: #ffdada;
+            background: #ffe0d9;
+            color: #8d3224;
         }
 
         .muted {
@@ -155,7 +216,7 @@
             justify-content: space-between;
             align-items: center;
             gap: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 14px;
         }
 
         .pill {
@@ -164,16 +225,22 @@
             gap: 8px;
             padding: 6px 10px;
             border-radius: 999px;
-            background: rgba(255, 255, 255, 0.06);
+            background: var(--panel-2);
             color: var(--muted);
             font-size: 12px;
+            font-weight: 700;
+        }
+
+        .hero .pill {
+            background: rgba(183, 243, 74, 0.16);
+            color: var(--accent);
         }
 
         .course-list {
             display: grid;
             gap: 10px;
             margin-top: 12px;
-            max-height: 400px;
+            max-height: 430px;
             overflow: auto;
             padding-right: 4px;
         }
@@ -183,10 +250,19 @@
             grid-template-columns: auto 1fr auto;
             align-items: center;
             gap: 10px;
+            min-height: 58px;
             padding: 12px 14px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 14px;
+            background: #faf7f0;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+        }
+
+        .course-item:hover {
+            background: #fffefb;
+            border-color: var(--accent-strong);
+            transform: translateX(2px);
         }
 
         .course-item strong {
@@ -199,21 +275,25 @@
 
         .log {
             margin-top: 12px;
-            background: #06090f;
-            border-radius: 18px;
-            border: 1px solid rgba(255, 255, 255, 0.06);
+            background: #202923;
+            border-radius: 10px;
+            border: 1px solid #39473c;
             padding: 14px;
             min-height: 280px;
             max-height: 460px;
             overflow: auto;
             font: 12px/1.5 Consolas, monospace;
             white-space: pre-wrap;
-            color: #d5e8ff;
+            color: #dff5be;
         }
 
         .status {
-            color: var(--accent-2);
+            color: var(--accent-strong);
             font-weight: 700;
+        }
+
+        .hero .status {
+            color: var(--accent);
         }
 
         .split {
@@ -230,6 +310,56 @@
 
             .form-grid {
                 grid-template-columns: 1fr;
+            }
+
+            .shell {
+                padding: 20px 16px 36px;
+            }
+
+            .hero,
+            .card {
+                padding: 20px;
+            }
+        }
+
+        @media (max-width: 560px) {
+
+            .hero .split,
+            .toolbar {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            h1 {
+                font-size: 3.2rem;
+            }
+
+            .actions {
+                display: grid;
+                grid-template-columns: 1fr;
+            }
+
+            button {
+                width: 100%;
+            }
+
+            .course-item {
+                grid-template-columns: auto 1fr;
+            }
+
+            .course-item .pill {
+                grid-column: 2;
+                justify-self: start;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            *,
+            *::before,
+            *::after {
+                scroll-behavior: auto !important;
+                transition-duration: 0.01ms !important;
             }
         }
     </style>
@@ -254,19 +384,20 @@
                 <div class="form-grid">
                     <div class="field">
                         <label for="site">Moodle site</label>
-                        <input id="site" value="https://moovi.uvigo.gal" />
+                        <input id="site" type="url" inputmode="url" autocomplete="url" required
+                            value="https://moovi.uvigo.gal" />
                     </div>
                     <div class="field">
                         <label for="jobs">Workers</label>
-                        <input id="jobs" type="number" min="1" max="12" value="4" />
+                        <input id="jobs" type="number" min="1" max="12" inputmode="numeric" value="4" />
                     </div>
                     <div class="field">
                         <label for="username">Usuario</label>
-                        <input id="username" />
+                        <input id="username" autocomplete="username" required />
                     </div>
                     <div class="field">
                         <label for="password">Contraseña</label>
-                        <input id="password" type="password" />
+                        <input id="password" type="password" autocomplete="current-password" required />
                     </div>
                     <div class="field">
                         <label for="courseIds">IDs de cursos (opcional)</label>
@@ -274,14 +405,16 @@
                     </div>
                     <div class="field">
                         <label for="saveEnv">Persistencia</label>
-                        <input id="saveEnv" type="checkbox" style="width: auto; margin-top: 10px;" />
-                        <span class="muted">Guardar credenciales en .env</span>
+                        <label class="check-label" for="saveEnv">
+                            <input id="saveEnv" type="checkbox" />
+                            <span>Guardar credenciales en .env</span>
+                        </label>
                     </div>
                 </div>
                 <div class="actions">
-                    <button class="secondary" id="loadCourses">Cargar cursos</button>
-                    <button class="primary" id="startDownload">Iniciar descarga</button>
-                    <button class="danger" id="cancelDownload" disabled>Cancelar</button>
+                    <button type="button" class="secondary" id="loadCourses">Cargar cursos</button>
+                    <button type="button" class="primary" id="startDownload">Iniciar descarga</button>
+                    <button type="button" class="danger" id="cancelDownload" disabled>Cancelar</button>
                 </div>
             </div>
 
@@ -299,9 +432,9 @@
         <section class="card" style="margin-top: 18px;">
             <div class="toolbar">
                 <h2>Estado y log</h2>
-                <div class="status" id="runStatus">Preparado</div>
+                <div class="status" id="runStatus" role="status" aria-live="polite">Preparado</div>
             </div>
-            <div class="log" id="log"></div>
+            <div class="log" id="log" role="log" aria-live="polite" aria-label="Registro de actividad"></div>
         </section>
     </main>
 
