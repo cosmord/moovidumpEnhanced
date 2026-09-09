@@ -92,6 +92,12 @@ Para generar el ejecutable de la interfaz gráfica:
 
 El resultado es `dist/MooviDumpEnhanced.exe`. El ejecutable incluye `main.py` como worker. La carpeta `dumps/` y el archivo `.env` se crean junto al ejecutable.
 
+### Publicar el `.exe` en GitHub Releases
+
+Cuando publicas una release en GitHub, Actions compila el ejecutable en Windows y adjunta `MooviDumpEnhanced.exe` a esa misma release. La release debe apuntar a una etiqueta, por ejemplo `v1.3.0`.
+
+Para completar manualmente una release ya creada, como `v1.2.0`, ejecuta el workflow `Build and publish Windows executable` desde la pestaña **Actions** e introduce su etiqueta.
+
 ### Modo navegador local
 
 El modo navegador busca una carpeta `web-server/`, `web/` o `frontend/`. Al seleccionarlo desde `run.py`, el lanzador comprueba `pnpm`, instala las dependencias si todavía no existe `node_modules/`, inicia el servidor y abre el navegador. También puedes hacerlo manualmente desde la carpeta del frontend:
@@ -139,3 +145,5 @@ Si `DUMP_ALL = True` en `main.py`, también se guardan snapshots JSON de cursos,
 Usa `--verbose` para obtener más información en el log. No compartas credenciales al enviar un informe.
 
 Gracias a Tyr7z por el código base.
+
+Consulta el [CHANGELOG](CHANGELOG.md) para ver el historial de versiones.
