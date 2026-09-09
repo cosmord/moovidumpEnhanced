@@ -132,6 +132,15 @@ def write_run_report(report_path: Path, report_data: dict) -> None:
     report_path.write_text(json.dumps(report_data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def validate_moodle_site(site: str) -> str | None:
+    """Return a normalized HTTPS Moodle URL or None when it is invalid."""
+    candidate = (site or "").strip().rstrip("/")
+    parsed = urlparse(candidate)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+        return None
+    return candidate
+
+
 def course_display_name(course: dict) -> str:
     full_name = course.get("fullname", "") or ""
     return (full_name.split(":", 1)[1].strip() if ":" in full_name else full_name.strip()) or f"course_{course.get('id')}"
@@ -784,7 +793,10 @@ def main(argv=None):
         logger.error("Missing MOODLE_SITE in environment.")
         sys.exit(1)
 
-    SITE = SITE.rstrip("/")
+    SITE = validate_moodle_site(SITE)
+    if not SITE:
+        logger.error("MOODLE_SITE must be a valid HTTPS URL without embedded credentials.")
+        sys.exit(1)
     WEBSERVICE_URL = f"{SITE}/webservice/rest/server.php"
     USERNAME = os.getenv("MOODLE_USERNAME")
     PASSWORD = os.getenv("MOODLE_PASSWORD")

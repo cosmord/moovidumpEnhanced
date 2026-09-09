@@ -341,15 +341,24 @@
             for (const course of state.courses) {
                 const item = document.createElement('label');
                 item.className = 'course-item';
-                item.innerHTML = `
-            <input type="checkbox" ${state.selected.has(String(course.id)) ? 'checked' : ''} data-course-id="${course.id}" />
-            <div>
-              <strong>${course.display_name}</strong>
-              <small>ID ${course.id}</small>
-            </div>
-            <span class="pill">${course.fullname || 'Visible'}</span>
-          `;
-                item.querySelector('input').addEventListener('change', (event) => {
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = state.selected.has(String(course.id));
+                checkbox.dataset.courseId = String(course.id);
+
+                const details = document.createElement('div');
+                const displayName = document.createElement('strong');
+                displayName.textContent = course.display_name || `course_${course.id}`;
+                const courseId = document.createElement('small');
+                courseId.textContent = `ID ${course.id}`;
+                details.append(displayName, courseId);
+
+                const fullname = document.createElement('span');
+                fullname.className = 'pill';
+                fullname.textContent = course.fullname || 'Visible';
+
+                item.append(checkbox, details, fullname);
+                checkbox.addEventListener('change', (event) => {
                     const id = String(course.id);
                     if (event.target.checked) state.selected.add(id); else state.selected.delete(id);
                 });

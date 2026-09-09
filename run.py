@@ -77,9 +77,13 @@ def prompt_credentials(default_site: str = DEFAULT_SITE):
 def write_env_file(env_file: Path, site: str, username: str, password: str | None = None) -> bool:
     """Write `.env`. If password is None, write empty password field (not saved)."""
     try:
-        pw_field = f'"{password}"' if password is not None else '""'
-        env_content = f"""MOODLE_SITE=\"{site}\"
-MOODLE_USERNAME=\"{username}\"
+        def quote_env_value(value: str) -> str:
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "\\r").replace("\n", "\\n")
+            return f'"{escaped}"'
+
+        pw_field = quote_env_value(password) if password is not None else '""'
+        env_content = f"""MOODLE_SITE={quote_env_value(site)}
+MOODLE_USERNAME={quote_env_value(username)}
 MOODLE_PASSWORD={pw_field}
 """
         env_file.write_text(env_content, encoding="utf-8")

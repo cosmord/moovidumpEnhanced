@@ -12,6 +12,8 @@ const pythonMain = path.join(repoRoot, 'main.py');
 const publicIndexPath = path.join(webDir, 'public', 'index.html');
 
 let port = Number(process.env.PORT || 3000);
+const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_ACTIVE_SESSIONS = 2;
 
 async function findAvailablePort(startPort: number): Promise<number> {
     for (let p = startPort; p < startPort + 100; p++) {
@@ -73,8 +75,22 @@ const sessions = new Map<string, DownloadSession>();
 function parseJsonBody<T>(req: IncomingMessage): Promise<T> {
     return new Promise((resolve, reject) => {
         const chunks: Buffer[] = [];
-        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+        let totalBytes = 0;
+        let rejected = false;
+        req.on('data', (chunk) => {
+            if (rejected) return;
+            const buffer = Buffer.from(chunk);
+            totalBytes += buffer.length;
+            if (totalBytes > MAX_BODY_BYTES) {
+                rejected = true;
+                reject(new Error('Request body too large'));
+                req.resume();
+                return;
+            }
+            chunks.push(buffer);
+        });
         req.on('end', () => {
+            if (rejected) return;
             const raw = Buffer.concat(chunks).toString('utf8').trim();
             if (!raw) {
                 resolve({} as T);
@@ -88,6 +104,30 @@ function parseJsonBody<T>(req: IncomingMessage): Promise<T> {
         });
         req.on('error', reject);
     });
+}
+
+function validateSite(site: string): string | null {
+    try {
+        const parsed = new URL((site || '').trim());
+        if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password) return null;
+        return parsed.toString().replace(/\/$/, '');
+    } catch {
+        return null;
+    }
+}
+
+function isLocalOrigin(req: IncomingMessage): boolean {
+    const origin = req.headers.origin;
+    if (!origin) return true;
+
+    try {
+        const parsed = new URL(origin);
+        return parsed.protocol === 'http:' &&
+            (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost') &&
+            parsed.port === String(port);
+    } catch {
+        return false;
+    }
 }
 
 function sendJson(res: ServerResponse, statusCode: number, body: unknown) {
@@ -173,15 +213,18 @@ function startSession(commandArgs: string[], env: NodeJS.ProcessEnv) {
 }
 
 async function listCourses(body: CoursesResponse & DownloadRequest) {
+    const site = validateSite(body.site);
+    if (!site) throw new Error('site debe ser una URL HTTPS válida sin credenciales');
+
     const env = {
         ...process.env,
-        MOODLE_SITE: body.site,
+        MOODLE_SITE: site,
         MOODLE_USERNAME: body.username,
         MOODLE_PASSWORD: body.password,
     };
 
     if (body.saveEnv) {
-        await writeEnvFile(body.site, body.username, body.password);
+        await writeEnvFile(site, body.username, body.password);
     }
 
     return new Promise<CoursesResponse>((resolve) => {
@@ -220,6 +263,11 @@ async function listCourses(body: CoursesResponse & DownloadRequest) {
 async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url || '/', `http://${req.headers.host || `127.0.0.1:${port}`}`);
 
+    if (req.method === 'POST' && !isLocalOrigin(req)) {
+        sendJson(res, 403, { error: 'Origen no permitido' });
+        return;
+    }
+
     if (req.method === 'GET' && url.pathname === '/') {
         const html = await readFile(publicIndexPath, 'utf8');
         sendText(res, 200, html, 'text/html; charset=utf-8');
@@ -231,6 +279,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
             const body = await parseJsonBody<DownloadRequest>(req);
             if (!body.site || !body.username || !body.password) {
                 sendJson(res, 400, { error: 'site, username y password son obligatorios' });
+                return;
+            }
+
+            if (!validateSite(body.site)) {
+                sendJson(res, 400, { error: 'site debe ser una URL HTTPS válida sin credenciales' });
                 return;
             }
 
@@ -255,13 +308,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
                 return;
             }
 
+            const site = validateSite(body.site);
+            if (!site) {
+                sendJson(res, 400, { error: 'site debe ser una URL HTTPS válida sin credenciales' });
+                return;
+            }
+
             if (body.saveEnv) {
-                await writeEnvFile(body.site, body.username, body.password);
+                await writeEnvFile(site, body.username, body.password);
             }
 
             const env = {
                 ...process.env,
-                MOODLE_SITE: body.site,
+                MOODLE_SITE: site,
                 MOODLE_USERNAME: body.username,
                 MOODLE_PASSWORD: body.password,
             };
@@ -275,6 +334,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
                 commandArgs.push('--all-courses');
             } else if (body.courseIds && body.courseIds.length > 0) {
                 commandArgs.push('--courses', body.courseIds.join(','));
+            }
+
+            const activeSessions = [...sessions.values()].filter((candidate) => candidate.status === 'running').length;
+            if (activeSessions >= MAX_ACTIVE_SESSIONS) {
+                sendJson(res, 429, { error: 'Ya hay demasiadas descargas en ejecución' });
+                return;
             }
 
             const session = startSession(commandArgs, env);

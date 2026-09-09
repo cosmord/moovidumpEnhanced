@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import main
+from run import write_env_file
 
 
 class FakeResponse:
@@ -46,6 +47,24 @@ class MooviDumpTests(unittest.TestCase):
         result = main.parse_course_selection("1,1684,2,1684,invalid", visible_courses)
 
         self.assertEqual(result, [1678, 1684])
+
+    def test_validate_moodle_site_requires_https_without_credentials(self):
+        self.assertEqual(main.validate_moodle_site("https://moodle.example/"), "https://moodle.example")
+        self.assertIsNone(main.validate_moodle_site("http://moodle.example"))
+        self.assertIsNone(main.validate_moodle_site("https://user:password@moodle.example"))
+
+    def test_write_env_file_escapes_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            env_path = Path(tmp_dir) / ".env"
+
+            self.assertTrue(write_env_file(env_path, "user\"name", "pa\\ss\"word\nnext"))
+
+            self.assertEqual(
+                env_path.read_text(encoding="utf-8"),
+                'MOODLE_SITE="user\\"name"\n'
+                'MOODLE_USERNAME="pa\\\\ss\\"word\\nnext"\n'
+                'MOODLE_PASSWORD=""\n',
+            )
 
     def test_download_to_path_resumes_partial_file(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
